@@ -1,0 +1,87 @@
+== npm install
+
+added 93 packages in 4s
+7.6.9
+== cap add ios
+✔ Adding native Xcode project in ios in 13.91ms
+✔ add in 14.17ms
+✔ Copying web assets from www to ios/App/App/public in 2.50ms
+✔ Creating capacitor.config.json in ios/App/App in 370.04μs
+✔ copy ios in 8.38ms
+✔ Updating iOS plugins in 309.00μs
+✔ Updating iOS native dependencies with pod install in 5.04s
+✔ update ios in 5.08s
+[success] ios platform added!
+Follow the Developer Workflow guide to get building:
+https://capacitorjs.com/docs/basics/workflow
+== cap sync ios
+✔ Copying web assets from www to ios/App/App/public in 2.29ms
+✔ Creating capacitor.config.json in ios/App/App in 393.29μs
+✔ copy ios in 6.06ms
+✔ Updating iOS plugins in 319.17μs
+✔ Updating iOS native dependencies with pod install in 2.43s
+✔ update ios in 2.44s
+[info] Sync finished in 2.47s
+Dict {
+    CFBundleName = $(PRODUCT_NAME)
+    CFBundleIdentifier = $(PRODUCT_BUNDLE_IDENTIFIER)
+    CFBundleInfoDictionaryVersion = 6.0
+    UIMainStoryboardFile = Main
+    CFBundleVersion = $(CURRENT_PROJECT_VERSION)
+    UILaunchStoryboardName = LaunchScreen
+    CFBundleExecutable = $(EXECUTABLE_NAME)
+    LSRequiresIPhoneOS = true
+    UIRequiredDeviceCapabilities = Array {
+        armv7
+    }
+    UISupportedInterfaceOrientations = Array {
+        UIInterfaceOrientationPortrait
+        UIInterfaceOrientationLandscapeLeft
+        UIInterfaceOrientationLandscapeRight
+    }
+    NSAppTransportSecurity = Dict {
+        NSAllowsLocalNetworking = true
+        NSAllowsArbitraryLoads = true
+        NSAllowsArbitraryLoadsInWebContent = true
+    }
+    NSLocalNetworkUsageDescription = Подключение к серверу клуба
+    CFBundleDisplayName = Админка
+    UIViewControllerBasedStatusBarAppearance = true
+    CFBundlePackageType = APPL
+    CFBundleDevelopmentRegion = en
+    UISupportedInterfaceOrientations~ipad = Array {
+        UIInterfaceOrientationPortrait
+        UIInterfaceOrientationPortraitUpsideDown
+        UIInterfaceOrientationLandscapeLeft
+        UIInterfaceOrientationLandscapeRight
+    }
+    CFBundleShortVersionString = $(MARKETING_VERSION)
+}
+total 224
+drwxr-xr-x  4 runner  staff     128 Oct 24 03:15 .
+drwxr-xr-x  5 runner  staff     160 Oct 24 03:15 ..
+-rw-r--r--  1 runner  staff  110522 Aug 31 22:02 AppIcon-512@2x.png
+-rw-r--r--  1 runner  staff     218 Aug 31 22:02 Contents.json
+== готово: ios
+
+RegisterExecutionPolicyException /Users/runner/work/admin/admin/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app (in target 'App' from project 'App')
+    cd /Users/runner/work/admin/admin/mobile/ios/App
+    builtin-RegisterExecutionPolicyException /Users/runner/work/admin/admin/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app
+
+Validate /Users/runner/work/admin/admin/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app (in target 'App' from project 'App')
+    cd /Users/runner/work/admin/admin/mobile/ios/App
+    builtin-validationUtility /Users/runner/work/admin/admin/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app -validate-for-store -infoplist-subpath Info.plist
+
+Touch /Users/runner/work/admin/admin/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app (in target 'App' from project 'App')
+    cd /Users/runner/work/admin/admin/mobile/ios/App
+    /usr/bin/touch -c /Users/runner/work/admin/admin/mobile/ios/App/build/Build/Products/Release-iphoneos/App.app
+
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-O, expected -Onone (in target 'Pods-App' from project 'Pods')
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-O, expected -Onone (in target 'App' from project 'App')
+warning: Run script build phase '[CP] Embed Pods Frameworks' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'App' from project 'App')
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-O, expected -Onone (in target 'CapacitorCordova' from project 'Pods')
+note: Disabling previews because SWIFT_VERSION is set and SWIFT_OPTIMIZATION_LEVEL=-O, expected -Onone (in target 'Capacitor' from project 'Pods')
+** BUILD SUCCEEDED **
+
+APP=build/Build/Products/Release-iphoneos/App.app
+-rw-r--r--  1 runner  staff  489136 Oct 24 03:17 ../../../Admin.ipa
