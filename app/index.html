@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E1116">
+<title>Админка клуба</title>
+<meta name="robots" content="noindex">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Админка">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root, [data-theme="dark"] {
+  --page:#06080B; --bg:#0E1116; --surface:#171C22; --line:#2A323B; --div:#232A32;
+  --text:#EEF1F4; --muted:#A3AEBA; --accent:#5FD3B6; --on-accent:#07251E;
+  --ok:#5FD3B6; --ok-bg:#1B2A27; --warn:#F2B450; --warn-bg:#2E2A18;
+  --danger:#FF9A90; --danger-bg:#33201F; --danger-line:#4A3532;
+  --btn:#2A323B; --sheet:#1F252C; --handle:#3A444F; --scrim:rgba(5,7,10,.62);
+}
+[data-theme="amoled"] {
+  --page:#000000; --bg:#000000; --surface:#0B0D10; --line:#1E242B; --div:#161B20;
+  --text:#F2F4F6; --muted:#9AA5B1; --accent:#5FD3B6; --on-accent:#04221B;
+  --ok:#5FD3B6; --ok-bg:#0F211D; --warn:#F2B450; --warn-bg:#251F0E;
+  --danger:#FF9A90; --danger-bg:#2A1716; --danger-line:#3F2B29;
+  --btn:#1C2228; --sheet:#12161A; --handle:#2E363F; --scrim:rgba(0,0,0,.72);
+}
+[data-theme="light"] {
+  --page:#E4E7EB; --bg:#F4F5F7; --surface:#FFFFFF; --line:#D5DAE0; --div:#E3E6EA;
+  --text:#12161B; --muted:#59636E; --accent:#0B7A61; --on-accent:#FFFFFF;
+  --ok:#0B7A61; --ok-bg:#E3F4EF; --warn:#A15C00; --warn-bg:#FDF1DF;
+  --danger:#C0392B; --danger-bg:#FBE9E7; --danger-line:#F0C4BE;
+  --btn:#EEF0F3; --sheet:#FFFFFF; --handle:#C9CED4; --scrim:rgba(18,22,27,.4);
+}
+[data-theme="neon"] {
+  --page:#0A0612; --bg:#120B1F; --surface:#1C1330; --line:#33254F; --div:#271C3D;
+  --text:#F1ECFA; --muted:#B3A6CC; --accent:#B78CFF; --on-accent:#1E0B3D;
+  --ok:#6FF0C8; --ok-bg:#15302C; --warn:#FFC15E; --warn-bg:#33261A;
+  --danger:#FF8FA3; --danger-bg:#3A1830; --danger-line:#4D2440;
+  --btn:#2B1F45; --sheet:#21173A; --handle:#44345F; --scrim:rgba(8,4,16,.66);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+:root { --tabbar-h: calc(68px + env(safe-area-inset-bottom)); }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--page); color: var(--text);
+  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  display: flex; justify-content: center; align-items: center;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app {
+  position: relative; width: 100%; height: 100dvh;
+  background: var(--bg); display: flex; flex-direction: column; overflow: hidden;
+}
+@media (min-width: 520px) {
+  body { padding: 24px; }
+  .app { width: 390px; height: min(844px, calc(100dvh - 48px)); border-radius: 36px; border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+}
+
+.screen { display: none; flex: 1; min-height: 0; overflow-y: auto; padding: calc(20px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 24px calc(16px + env(safe-area-inset-left)); flex-direction: column; overscroll-behavior: contain; }
+.screen.active { display: flex; }
+.screen > * { flex-shrink: 0; }
+[hidden] { display: none !important; }
+
+/* общие */
+.row { display: flex; align-items: center; gap: 10px; }
+.grow { flex: 1; min-width: 0; }
+.h1 { font-size: 24px; font-weight: 800; letter-spacing: -.01em; margin: 0; line-height: 1.15; }
+.h2 { font-size: 20px; font-weight: 800; letter-spacing: -.01em; margin: 0; line-height: 1.2; }
+.sub { font-size: 13px; color: var(--muted); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+.small { font-size: 12px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; display: inline-block; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.section-label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
+.icon-btn { width: 44px; height: 44px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.icon-ghost { width: 44px; height: 44px; border-radius: 12px; background: transparent; border: 0; color: var(--muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.btn { height: 44px; border-radius: 10px; border: 0; padding: 0 14px; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-outline { background: transparent; border: 1px solid var(--line); }
+.btn-danger-outline { background: transparent; border: 1px solid var(--danger-line); color: var(--danger); }
+.btn-block { width: 100%; height: 52px; border-radius: 12px; font-size: 15px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.logo-slot { border: 1.5px dashed var(--muted); color: var(--muted); display: flex; align-items: center; justify-content: center; font-weight: 800; letter-spacing: .04em; flex-shrink: 0; }
+.list > * + * { border-top: 1px solid var(--div); }
+.badge { height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; white-space: nowrap; }
+.b-ok { background: var(--ok-bg); color: var(--ok); }
+.b-warn { background: var(--warn-bg); color: var(--warn); }
+.b-danger { background: var(--danger-bg); color: var(--danger); }
+.b-muted { background: var(--btn); color: var(--muted); }
+
+/* вход */
+.login-head { display: flex; flex-direction: column; align-items: center; text-align: center; margin-top: 24px; }
+.login-head p { margin: 6px 0 0; font-size: 14px; line-height: 1.45; color: var(--muted); max-width: 300px; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.field label, .field .lbl { font-size: 13px; font-weight: 700; color: var(--muted); }
+.input { height: 52px; width: 100%; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); padding: 0 14px; font-size: 15px; }
+.input::placeholder { color: var(--muted); opacity: .8; }
+.pw-wrap { position: relative; }
+.pw-wrap .input { padding-right: 56px; }
+.pw-wrap .icon-ghost { position: absolute; right: 4px; top: 4px; }
+.select-btn { height: 52px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); display: flex; align-items: center; gap: 10px; padding: 0 14px; text-align: left; width: 100%; }
+.check { display: flex; align-items: center; gap: 12px; margin-top: 16px; background: none; border: 0; padding: 0; text-align: left; font-size: 15px; font-weight: 600; min-height: 52px; }
+.check .box { width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--muted); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--on-accent); }
+.check[aria-checked="true"] .box { background: var(--accent); border-color: var(--accent); }
+.check[aria-checked="false"] .box svg { visibility: hidden; }
+.err { color: var(--danger); font-size: 13px; font-weight: 600; margin-top: 8px; min-height: 18px; }
+
+/* зал */
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-top: 14px; }
+.stat { padding: 10px 12px; }
+.stat b { display: block; font-size: 24px; font-weight: 800; }
+.stat span { font-size: 12px; color: var(--muted); }
+.wol { margin-top: 12px; padding: 8px 8px 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chips { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; scrollbar-width: none; }
+.chip { height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--line); background: transparent; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+.pc { min-height: 80px; padding: 10px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; gap: 6px; }
+.pc.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.pc-id { font-size: 14px; font-weight: 700; }
+.st { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.st.free { color: var(--ok); } .st.busy { color: var(--warn); } .st.off, .st.boot { color: var(--muted); }
+.st.off .dot { background: transparent; border: 2px solid currentColor; }
+.st.boot .dot { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+
+/* шторка */
+.scrim { position: absolute; left: 0; right: 0; top: 0; bottom: var(--tabbar-h); background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .2s; }
+.sheet { position: absolute; left: 0; right: 0; bottom: var(--tabbar-h); background: var(--sheet); border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; padding: 8px 16px 16px; transform: translateY(115%); transition: transform .25s ease; visibility: hidden; }
+.app.sheet-open .scrim { opacity: 1; pointer-events: auto; }
+.app.sheet-open .sheet { transform: none; visibility: visible; }
+.handle { width: 36px; height: 4px; border-radius: 2px; background: var(--handle); margin: 0 auto 8px; }
+.st-pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid currentColor; font-size: 12px; font-weight: 700; }
+.actions { margin-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.action { height: 56px; border-radius: 12px; border: 0; background: var(--btn); font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; padding: 0 14px; text-align: left; }
+.action.danger { color: var(--danger); }
+.msg-row { display: flex; gap: 8px; margin-top: 12px; }
+
+/* процессы */
+.meters { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 16px; }
+.meter { padding: 12px; }
+.meter b { display: block; font-size: 24px; font-weight: 800; margin-top: 2px; }
+.bar { height: 4px; border-radius: 2px; background: var(--btn); margin-top: 8px; overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 2px; }
+.proc { display: flex; align-items: center; gap: 12px; padding: 10px 8px 10px 14px; min-height: 64px; }
+.app-ic { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; background: var(--btn); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.app-ic img { width: 28px; height: 28px; image-rendering: auto; }
+.pc .maint { font-size: 11px; font-weight: 700; color: var(--warn); }
+.btn[disabled], .action[disabled] { opacity: .45; cursor: not-allowed; }
+.action.confirm, .btn.confirm { background: var(--danger); color: var(--bg); }
+.proc-name { font-size: 15px; font-weight: 700; word-break: break-all; }
+
+/* склад */
+.progress { height: 6px; border-radius: 3px; background: var(--btn); margin-top: 8px; overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .2s; }
+.inv { display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 14px; min-height: 72px; }
+.inv-name { font-size: 14px; font-weight: 700; }
+.inv .badge { margin-top: 6px; height: 24px; }
+.stepper { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.stepper button { width: 44px; height: 44px; border-radius: 10px; border: 0; background: var(--btn); display: flex; align-items: center; justify-content: center; }
+.stepper output { width: 36px; text-align: center; font-size: 17px; font-weight: 800; }
+
+/* акт */
+.total { padding: 16px; margin-top: 16px; border-radius: 16px; }
+.total-sum { font-size: 36px; font-weight: 800; letter-spacing: -.02em; margin-top: 2px; }
+.split { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 12px; }
+.split > div { border-radius: 10px; padding: 10px 12px; }
+.split b { display: block; font-size: 16px; font-weight: 800; margin-top: 2px; }
+.split span { font-size: 12px; font-weight: 600; }
+.diff { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+.diff-sum { font-size: 15px; font-weight: 800; white-space: nowrap; }
+.empty { padding: 20px 14px; text-align: center; color: var(--muted); font-size: 14px; }
+
+/* настройки */
+.themes { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+.theme-opt { text-align: left; padding: 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.theme-opt[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.tprev { height: 30px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); display: flex; align-items: center; gap: 6px; padding: 0 8px; }
+.tprev i { height: 12px; border-radius: 4px; background: var(--surface); display: block; }
+.tprev em { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); margin-left: auto; }
+.theme-name { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 700; }
+.theme-opt[aria-checked="false"] .theme-name svg { visibility: hidden; }
+.theme-name svg { color: var(--accent); }
+.kv { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px; min-height: 52px; font-size: 14px; font-weight: 600; }
+.kv span:last-child { font-size: 13px; color: var(--muted); font-weight: 500; text-align: right; }
+.switch-row { width: 100%; min-height: 52px; border: 0; background: transparent; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 14px; text-align: left; font-size: 14px; font-weight: 600; }
+.switch { width: 44px; height: 26px; border-radius: 13px; padding: 3px; background: var(--btn); display: flex; flex-shrink: 0; transition: background .15s; }
+.switch i { width: 20px; height: 20px; border-radius: 50%; background: var(--muted); transition: transform .15s; }
+.switch-row[aria-checked="true"] .switch { background: var(--accent); }
+.switch-row[aria-checked="true"] .switch i { background: var(--on-accent); transform: translateX(18px); }
+.avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--btn); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; flex-shrink: 0; }
+
+/* таббар */
+.tabbar { flex-shrink: 0; height: var(--tabbar-h); border-top: 1px solid var(--div); display: flex; padding: 0 8px env(safe-area-inset-bottom); background: var(--bg); }
+.tabbar[hidden] { display: none; }
+.tab { flex: 1; border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.tab[aria-current="page"] { color: var(--accent); font-weight: 700; }
+
+.toast { position: absolute; left: 16px; right: 16px; bottom: calc(var(--tabbar-h) + 16px); background: var(--text); color: var(--bg); border-radius: 12px; padding: 12px 14px; font-size: 14px; font-weight: 600; opacity: 0; transform: translateY(8px); transition: .2s; pointer-events: none; z-index: 10; }
+#s-login { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+.app.no-tabs .toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
+.toast.show { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 6.7a8 8 0 1 0 11.4 0"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 9v6M12 9v6M16 9v6"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 13v6a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-6"/></symbol>
+</svg>
+
+<div class="app no-tabs" id="app">
+
+  <!-- ВХОД -->
+  <section class="screen active" id="s-login" aria-label="Вход оператора">
+    <div class="login-head">
+      <div class="logo-slot" role="img" aria-label="Место для логотипа" style="width:72px;height:72px;border-radius:20px;font-size:12px">ЛОГО</div>
+      <h1 class="h1" style="margin-top:20px;font-size:26px">Вход оператора</h1>
+      <p>Логин и пароль те же, что на операторском ПК в клубе</p>
+    </div>
+    <form id="loginForm" novalidate style="margin-top:16px;display:flex;flex-direction:column;flex:1">
+      <div class="field">
+        <span class="lbl" id="clubLbl">Клуб</span>
+        <button type="button" class="select-btn" aria-labelledby="clubLbl clubName">
+          <span class="dot" style="color:var(--ok)"></span>
+          <span class="grow"><span id="clubName" style="display:block;font-size:15px;font-weight:700">Клуб</span><span class="small" id="clubAddr" style="display:block">проверяю связь…</span></span>
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)" aria-hidden="true"><use href="#i-chev"/></svg>
+        </button>
+      </div>
+      <div class="field">
+        <label for="opLogin">Логин</label>
+        <input class="input" id="opLogin" type="text" autocomplete="username" placeholder="Логин оператора">
+      </div>
+      <div class="field">
+        <label for="opPass">Пароль</label>
+        <div class="pw-wrap">
+          <input class="input" id="opPass" type="password" autocomplete="current-password" placeholder="Пароль">
+          <button type="button" class="icon-ghost" id="pwToggle" aria-label="Показать пароль">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-eye"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="err" id="loginErr" role="alert"></div>
+      <div style="flex:1;min-height:16px"></div>
+      <button type="submit" class="btn btn-primary btn-block" style="height:56px;border-radius:14px;font-size:16px">Войти</button>
+      <div class="small" style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:14px">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-lock"/></svg>
+        Соединение через ваш сервер клуба
+      </div>
+    </form>
+  </section>
+
+  <!-- ЗАЛ -->
+  <section class="screen" id="s-hall" aria-label="Зал">
+    <div class="row" style="gap:12px">
+      <div class="logo-slot" role="img" aria-label="Место для логотипа" style="width:44px;height:44px;border-radius:12px;font-size:10px">ЛОГО</div>
+      <div class="grow">
+        <h1 class="h1">Зал 1</h1>
+        <div class="sub"><span class="dot" id="shiftDot" style="color:var(--ok)"></span><span id="hallSub"></span></div>
+      </div>
+      <button class="icon-btn" id="refreshBtn" aria-label="Обновить">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-refresh"/></svg>
+      </button>
+    </div>
+    <div class="stats">
+      <div class="card stat"><b id="nFree" style="color:var(--ok)">0</b><span>Свободно</span></div>
+      <div class="card stat"><b id="nBusy" style="color:var(--warn)">0</b><span>Занято</span></div>
+      <div class="card stat"><b id="nOff">0</b><span>Выключено</span></div>
+    </div>
+    <div class="card wol" id="wolBar">
+      <div class="row" style="font-size:14px;font-weight:600">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)" aria-hidden="true"><use href="#i-power"/></svg>
+        <span id="wolText"></span>
+      </div>
+      <button class="btn btn-primary" id="wakeAll" style="min-width:112px">Включить все</button>
+    </div>
+    <div class="chips" role="group" aria-label="Фильтр ПК">
+      <button class="chip" data-filter="all" aria-pressed="true">Все</button>
+      <button class="chip" data-filter="free" aria-pressed="false">Свободны</button>
+      <button class="chip" data-filter="busy" aria-pressed="false">Заняты</button>
+      <button class="chip" data-filter="off" aria-pressed="false">Выкл.</button>
+    </div>
+    <div class="grid" id="pcGrid"></div>
+  </section>
+
+  <!-- ДИСПЕТЧЕР ЗАДАЧ -->
+  <section class="screen" id="s-tasks" aria-label="Диспетчер задач">
+    <div class="row" style="gap:8px">
+      <button class="icon-btn" data-go="hall" aria-label="Назад к залу">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-back"/></svg>
+      </button>
+      <div class="grow">
+        <h1 class="h2"><span id="taskPc">PC</span> · Процессы</h1>
+        <div class="sub" id="taskSub"></div>
+      </div>
+      <button class="icon-btn" id="procRefresh" aria-label="Обновить список">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-refresh"/></svg>
+      </button>
+    </div>
+    <div class="meters">
+      <div class="card meter"><span class="small">ЦП программами</span><b id="cpuVal">—</b><div class="bar"><i id="cpuBar" style="background:var(--warn)"></i></div></div>
+      <div class="card meter"><span class="small">Программ запущено</span><b id="appCount">—</b><div class="small" id="sampleNote" style="margin-top:8px">обновлено —</div></div>
+    </div>
+    <div class="row" style="justify-content:space-between;margin-top:16px">
+      <div style="font-size:15px;font-weight:700">Процессы</div>
+      <div class="row" style="gap:8px" role="group" aria-label="Сортировка">
+        <button class="chip" data-sort="cpu" aria-pressed="true" style="font-size:13px;padding:0 14px">По ЦП</button>
+        <button class="chip" data-sort="start" aria-pressed="false" style="font-size:13px;padding:0 14px">По запуску</button>
+      </div>
+    </div>
+    <div class="card list" id="procList" style="margin-top:8px"></div>
+  </section>
+
+  <!-- СКЛАД -->
+  <section class="screen" id="s-inventory" aria-label="Инвентаризация">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h1 class="h1">Инвентаризация</h1>
+        <div class="sub">Склад бара · остатки из Gizmo</div>
+      </div>
+      <button class="icon-btn" id="scanBtn" aria-label="Сканировать штрихкод" style="background:var(--accent);border-color:var(--accent);color:var(--on-accent)">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-scan"/></svg>
+      </button>
+    </div>
+    <div style="margin-top:16px">
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <div style="font-size:14px;font-weight:700" id="invProgressText"></div>
+        <div class="small" id="invLeft"></div>
+      </div>
+      <div class="progress"><i id="invBar"></i></div>
+    </div>
+    <form id="scanForm" class="row" style="gap:8px;margin-top:16px" autocomplete="off">
+      <label for="scanInput" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Штрихкод или название</label>
+      <input class="input" id="scanInput" inputmode="search" placeholder="Штрихкод или название товара" style="height:48px">
+      <button class="btn btn-outline" type="button" id="invReload" aria-label="Обновить остатки из Gizmo" style="height:48px;width:48px;padding:0;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-refresh"/></svg></button>
+    </form>
+    <div class="small" id="scanHint" style="margin-top:6px">Сканер-пистолет: наведите на штрихкод, товар +1. Или начните вводить название.</div>
+    <div class="card list" id="invList" style="margin-top:12px"></div>
+    <div style="flex:1;min-height:16px"></div>
+    <button class="btn btn-primary btn-block" data-go="report">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-check"/></svg>
+      Завершить и сформировать акт
+    </button>
+  </section>
+
+  <!-- АКТ -->
+  <section class="screen" id="s-report" aria-label="Акт расхождений">
+    <div class="row" style="gap:8px">
+      <button class="icon-btn" data-go="inventory" aria-label="Назад к инвентаризации">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-back"/></svg>
+      </button>
+      <div class="grow">
+        <h1 class="h2">Акт расхождений</h1>
+        <div class="sub" id="reportDate"></div>
+      </div>
+    </div>
+    <div class="card total">
+      <div class="small">Итог по складу</div>
+      <div class="total-sum" id="repTotal">0 ₽</div>
+      <div class="split">
+        <div style="background:var(--danger-bg);color:var(--danger)"><span>Недостача</span><b id="repShort">0 ₽</b></div>
+        <div style="background:var(--warn-bg);color:var(--warn)"><span>Излишек</span><b id="repOver">0 ₽</b></div>
+      </div>
+      <div class="small" style="font-size:13px;margin-top:12px" id="repStats"></div>
+    </div>
+    <div style="font-size:15px;font-weight:700;margin-top:16px">Расхождения</div>
+    <div class="card list" id="repList" style="margin-top:8px"></div>
+    <div style="flex:1;min-height:16px"></div>
+    <button class="btn btn-primary btn-block" id="shareBtn">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-share"/></svg>
+      Поделиться актом
+    </button>
+    <button class="btn btn-outline btn-block" id="csvBtn" style="margin-top:8px;height:48px;font-size:14px;font-weight:700">Экспорт в CSV</button>
+  </section>
+
+  <!-- НАСТРОЙКИ -->
+  <section class="screen" id="s-settings" aria-label="Настройки">
+    <h1 class="h1">Настройки</h1>
+
+    <div class="section-label" style="margin-top:16px">Смена в Gizmo</div>
+    <div class="card" style="padding:12px 14px">
+      <div class="row" style="justify-content:space-between">
+        <span class="st-pill" id="shiftPill"><span class="dot"></span><span id="shiftState"></span></span>
+        <button class="btn btn-outline" id="shiftRefresh" style="height:36px;font-size:12px;padding:0 10px">Обновить</button>
+      </div>
+      <div style="font-size:14px;font-weight:600;margin-top:10px" id="shiftInfo"></div>
+      <div class="small" style="margin-top:4px">Смену открывают и закрывают на операторском ПК, здесь только статус</div>
+    </div>
+
+    <div class="section-label">Аккаунт</div>
+    <div class="card row" style="padding:10px 8px 10px 14px;gap:12px">
+      <div class="avatar" id="opAvatar" aria-hidden="true">ОП</div>
+      <div class="grow">
+        <div style="font-size:15px;font-weight:700" id="opName">Оператор</div>
+        <div class="small" style="margin-top:2px">Вход по учётке оператора Gizmo</div>
+      </div>
+      <button class="btn btn-outline" id="logoutBtn" style="color:var(--danger);font-size:13px">Выйти</button>
+    </div>
+
+    <div class="section-label">Тема</div>
+    <div class="themes" role="radiogroup" aria-label="Тема" id="themeGroup">
+      <button class="theme-opt" role="radio" data-theme-opt="dark" aria-checked="true"><span class="tprev" data-theme="dark"><i style="width:22px"></i><i style="width:34px"></i><em></em></span><span class="theme-name">Тёмная<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-check"/></svg></span></button>
+      <button class="theme-opt" role="radio" data-theme-opt="amoled" aria-checked="false"><span class="tprev" data-theme="amoled"><i style="width:22px"></i><i style="width:34px"></i><em></em></span><span class="theme-name">AMOLED<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-check"/></svg></span></button>
+      <button class="theme-opt" role="radio" data-theme-opt="light" aria-checked="false"><span class="tprev" data-theme="light"><i style="width:22px"></i><i style="width:34px"></i><em></em></span><span class="theme-name">Светлая<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-check"/></svg></span></button>
+      <button class="theme-opt" role="radio" data-theme-opt="neon" aria-checked="false"><span class="tprev" data-theme="neon"><i style="width:22px"></i><i style="width:34px"></i><em></em></span><span class="theme-name">Неон<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-check"/></svg></span></button>
+    </div>
+
+    <div class="section-label">Приложение на телефоне</div>
+    <div class="card" style="padding:12px 14px">
+      <div class="row" style="justify-content:space-between;gap:12px">
+        <div class="grow">
+          <div style="font-size:14px;font-weight:700" id="installTitle">Установить на главный экран</div>
+          <div class="small" style="margin-top:4px" id="installHint"></div>
+        </div>
+        <button class="btn btn-primary" id="installBtn" hidden>Установить</button>
+      </div>
+    </div>
+
+    <div class="section-label">Сервер клуба</div>
+    <div class="card list">
+      <div class="kv"><span>Адрес</span><span id="srvAddr">—</span></div>
+      <div class="kv"><span>Статус</span><span id="srvState" style="color:var(--muted);font-weight:600;display:flex;align-items:center;gap:6px"><span class="dot"></span>—</span></div>
+    </div>
+
+    <div class="section-label">Уведомления</div>
+    <div class="card list" style="overflow:hidden">
+      <button class="switch-row" role="switch" aria-checked="true"><span>ПК выключился</span><span class="switch"><i></i></span></button>
+      <button class="switch-row" role="switch" aria-checked="true"><span>Недостача на складе</span><span class="switch"><i></i></span></button>
+      <button class="switch-row" role="switch" aria-checked="false"><span>Закрытие смены</span><span class="switch"><i></i></span></button>
+    </div>
+
+    <div class="section-label">О приложении</div>
+    <div class="card row" style="padding:12px 14px;gap:12px">
+      <div class="logo-slot" role="img" aria-label="Место для логотипа" style="width:48px;height:48px;border-radius:12px;font-size:10px">ЛОГО</div>
+      <div><div style="font-size:15px;font-weight:800">Админка клуба</div><div class="small" style="margin-top:2px">Работает с Gizmo · <span id="gizmoVer">v0.1</span></div></div>
+    </div>
+  </section>
+
+  <!-- ШТОРКА ПК -->
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="handle"></div>
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <div class="row"><span id="sheetTitle" style="font-size:20px;font-weight:800"></span><span class="st-pill" id="sheetPill"><span class="dot"></span><span id="sheetLabel"></span></span></div>
+        <div class="small" style="font-size:13px;margin-top:4px" id="sheetSub"></div>
+      </div>
+      <button class="icon-ghost" id="sheetClose" aria-label="Закрыть">
+        <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-close"/></svg>
+      </button>
+    </div>
+    <div id="sheetBody"></div>
+  </div>
+
+  <nav class="tabbar" id="tabbar" hidden aria-label="Разделы">
+    <button class="tab" data-tab="hall"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-monitor"/></svg>Зал</button>
+    <button class="tab" data-tab="inventory"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-box"/></svg>Склад</button>
+    <button class="tab" data-tab="report"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-doc"/></svg>Отчёты</button>
+    <button class="tab" data-tab="settings"><svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-sliders"/></svg>Настройки</button>
+  </nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
