@@ -218,7 +218,8 @@
         '<button class="action" data-act="reboot">' + svg('i-refresh', 20) + 'Перезагрузить</button>' +
         '<button class="action" data-act="tasks">' + svg('i-list', 20) + 'Диспетчер задач</button>' +
         '<button class="action" data-act="msg">' + svg('i-chat', 20) + 'Сообщение</button>' +
-        '<button class="action danger" data-act="shutdown">' + svg('i-power', 20) + 'Выключить</button></div>' +
+        '<button class="action danger" data-act="shutdown">' + svg('i-power', 20) + 'Выключить</button>' +
+        (h.status === 'busy' ? '<button class="action tt-btn" data-act="techtime">' + svg('i-plus', 20) + 'Тех. время</button>' : '') + '</div>' +
         '<form class="msg-row" id="msgForm" hidden><label for="msgInput" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Текст сообщения</label>' +
         '<input class="input" id="msgInput" maxlength="200" placeholder="Текст для экрана ПК" style="height:48px"><button class="btn btn-primary" type="submit" style="height:48px">Отправить</button></form>';
     }
@@ -230,6 +231,7 @@
     var a = b.dataset.act;
     if (a === 'tasks') { state.taskHost = h.id; go('tasks'); return; }
     if (a === 'msg') { var f = $('#msgForm'); f.hidden = !f.hidden; if (!f.hidden) $('#msgInput').focus(); return; }
+    if (a === 'techtime') { openTechTime(h); return; }
     // выключение — двойное нажатие (включить потом можно только через Wake-on-LAN); остальное — сразу
     if (a === 'shutdown' && !confirmTap(b, 'Нажмите ещё раз')) return;
     b.disabled = true;
@@ -247,27 +249,35 @@
     e.preventDefault();
     var v = $('#msgInput').value.trim(); if (!v) { $('#msgInput').focus(); return; }
     var id = state.sel, h = findHost(id);
-    api('POST', '/api/hosts/' + id + '/message', { text: v }).then(function () {
-      toast('Сообщение отправлено на ' + (h ? h.name : 'ПК')); closeSheet();
-    }, function (err) { toast(err.message); });
+    closeSheet(); toast('Сообщение отправлено на ' + (h ? h.name : 'ПК'));
+    api('POST', '/api/hosts/' + id + '/message', { text: v }).catch(function (err) { toast(err.message); });
   });
   $('#sheetClose').addEventListener('click', closeSheet);
   $('#scrim').addEventListener('click', closeSheet);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeSheet(); if (!$('#ttModal').hidden) closeModal(); } });
 
   /* ---------- диспетчер задач ---------- */
-  var appsLoading = false;
-  function loadApps() {
+  var appsLoading = false, appsTimer = null;
+  function loadApps(silent) {
     var h = findHost(state.taskHost);
     $('#taskPc').textContent = h ? h.name : 'ПК';
     var m = h ? (meta[h.status] || meta.off) : meta.off;
     $('#taskSub').innerHTML = '<span class="dot" style="color:' + m.color + '"></span>' + m.label + (h ? ' · ' + esc(subOf(h)) : '');
     if (appsLoading || state.taskHost == null) return;
     appsLoading = true;
-    $('#procList').innerHTML = '<div class="empty">Загружаю программы…</div>';
-    api('GET', '/api/hosts/' + state.taskHost + '/processes').then(function (d) {
+    if (!silent) { state.apps = []; $('#procList').innerHTML = '<div class="empty">Загружаю программы…</div>'; }
+    var forHost = state.taskHost;
+    api('GET', '/api/hosts/' + forHost + '/processes').then(function (d) {
+      if (forHost !== state.taskHost || state.screen !== 'tasks') return;
       state.apps = d.apps || []; state.appsAt = new Date(); renderApps();
+      // первый ответ — без ЦП; через 1.5 с придёт второй, уже с ЦП; дальше раз в 5 с
+      clearTimeout(appsTimer);
+      var needCpu = state.apps.some(function (a) { return a.cpu == null; });
+      appsTimer = setTimeout(function () {
+        if (state.screen === 'tasks' && !document.hidden) loadApps(true);
+      }, needCpu ? 1500 : 5000);
     }, function (err) {
+      if (silent && state.apps.length) return;
       state.apps = [];
       $('#procList').innerHTML = '<div class="empty">' + esc(err.offline ? 'ПК не в сети: клиент Gizmo не подключён' : err.message) + '</div>';
       $('#cpuVal').textContent = '—'; $('#appCount').textContent = '—';
@@ -276,19 +286,20 @@
   function renderApps() {
     var list = state.apps.slice();
     var cpu = list.reduce(function (s, x) { return s + (x.cpu || 0); }, 0);
-    $('#cpuVal').textContent = Math.round(Math.min(100, cpu)) + '%';
+    var noCpu = list.length && list.every(function (x) { return x.cpu == null; });
+    $('#cpuVal').textContent = noCpu ? '…' : Math.round(Math.min(100, cpu)) + '%';
     $('#cpuBar').style.width = Math.min(100, cpu) + '%';
     $('#appCount').textContent = list.length;
     $('#sampleNote').textContent = 'обновлено ' + (state.appsAt ? state.appsAt.toLocaleTimeString('ru-RU') : '—');
     $$('[data-sort]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.sort === state.sort ? 'true' : 'false'); });
     list.sort(function (a, b) {
-      return state.sort === 'cpu' ? (b.cpu - a.cpu) : String(b.started || '').localeCompare(String(a.started || ''));
+      return state.sort === 'cpu' ? ((b.cpu || 0) - (a.cpu || 0)) : String(b.started || '').localeCompare(String(a.started || ''));
     });
     if (!list.length) { $('#procList').innerHTML = '<div class="empty">Пользовательских программ не запущено</div>'; return; }
     $('#procList').innerHTML = list.map(function (x, i) {
       var ic = x.icon ? '<img alt="" src="data:image/png;base64,' + x.icon + '">' : svg('i-monitor', 18);
       return '<div class="proc"><span class="app-ic">' + ic + '</span><div class="grow"><div class="proc-name">' + esc(x.name) + '</div>' +
-        '<div class="small" style="margin-top:2px">ЦП ' + x.cpu + '%' + (x.count > 1 ? ' · процессов ' + x.count : '') + (x.started ? ' · с ' + hhmm(x.started) : '') + '</div></div>' +
+        '<div class="small" style="margin-top:2px">ЦП ' + (x.cpu == null ? '…' : x.cpu + '%') + (x.count > 1 ? ' · процессов ' + x.count : '') + (x.started ? ' · с ' + hhmm(x.started) : '') + '</div></div>' +
         '<button class="btn btn-danger-outline" data-kill="' + i + '" style="font-size:13px">Завершить</button></div>';
     }).join('');
     state.appsView = list;
@@ -304,7 +315,82 @@
     }, function (err) { toast(err.message); row.style.opacity = ''; b.disabled = false; b.textContent = 'Завершить'; });
   });
   $$('[data-sort]').forEach(function (b) { b.addEventListener('click', function () { state.sort = b.dataset.sort; renderApps(); }); });
-  $('#procRefresh').addEventListener('click', loadApps);
+  $('#procRefresh').addEventListener('click', function () { loadApps(true); toast('Обновляю…'); });
+
+  /* ---------- тех. время ---------- */
+  var TT_MIN = [5, 10, 15, 20, 30];
+  var TT_REASON = ['Завис ПК', 'Не запускается игра', 'Проблемы с интернетом', 'Периферия', 'Перезагрузка ПК', 'Другое'];
+  var tt = { host: null, minutes: 10, reason: TT_REASON[0] };
+  function chip(label, on, attr) {
+    return '<button type="button" class="chip" ' + attr + ' aria-pressed="' + (on ? 'true' : 'false') + '" style="height:40px;padding:0 14px;font-size:13px">' + esc(label) + '</button>';
+  }
+  function openTechTime(h) {
+    tt.host = h; closeSheet();
+    renderTechTime();
+    $('#ttModal').hidden = false; app.classList.add('modal-open');
+  }
+  function closeModal() { $('#ttModal').hidden = true; app.classList.remove('modal-open'); }
+  function renderTechTime() {
+    var h = tt.host;
+    $('#ttBody').innerHTML =
+      '<h2 class="h2" id="ttTitle">Тех. время</h2>' +
+      '<div class="small" style="font-size:13px;margin-top:4px">' + esc(h.name) + ' · ' + esc(h.user || 'гость') + '</div>' +
+      '<div class="section-label" style="margin-top:16px">Сколько</div>' +
+      '<div class="row" style="flex-wrap:wrap;gap:8px">' + TT_MIN.map(function (m) { return chip(m + ' мин', tt.minutes === m, 'data-tt-min="' + m + '"'); }).join('') + '</div>' +
+      '<div class="section-label">Причина</div>' +
+      '<div class="row" style="flex-wrap:wrap;gap:8px">' + TT_REASON.map(function (r) { return chip(r, tt.reason === r, 'data-tt-reason="' + esc(r) + '"'); }).join('') + '</div>' +
+      '<label for="ttNote" class="small" style="display:block;margin-top:12px">Уточнение (необязательно)</label>' +
+      '<input class="input" id="ttNote" maxlength="80" placeholder="например: вылетала CS2" style="height:48px;margin-top:6px">' +
+      '<div class="row" style="gap:8px;margin-top:16px">' +
+      '<button type="button" class="btn btn-outline" data-tt-close style="flex:1;height:52px">Отмена</button>' +
+      '<button type="button" class="btn btn-primary" id="ttGo" style="flex:2;height:52px;font-size:15px;font-weight:800">Начислить ' + tt.minutes + ' мин</button></div>';
+  }
+  function ttReasonText() {
+    var note = ($('#ttNote') && $('#ttNote').value.trim()) || '';
+    var r = tt.reason === 'Другое' ? (note || 'другое') : tt.reason + (note ? ', ' + note : '');
+    return r.charAt(0).toLowerCase() + r.slice(1);
+  }
+  function showTechTimeResult(d, reason) {
+    var text = d.user + ' — тех. время ' + d.minutes + ' мин (' + reason + ')';
+    $('#ttBody').innerHTML =
+      '<h2 class="h2">Начислено ' + d.minutes + ' мин</h2>' +
+      '<div class="small" style="font-size:13px;margin-top:4px">' + esc(d.host) + ' · ' + esc(d.user) + '. Текст можно поправить и скопировать.</div>' +
+      '<label for="ttText" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Текст для копирования</label>' +
+      '<textarea class="input" id="ttText" rows="3" style="height:auto;padding:12px 14px;margin-top:12px;resize:vertical;line-height:1.4">' + esc(text) + '</textarea>' +
+      '<div class="row" style="gap:8px;margin-top:12px">' +
+      '<button type="button" class="btn btn-outline" data-tt-close style="flex:1;height:52px">Готово</button>' +
+      '<button type="button" class="btn btn-primary" id="ttCopy" style="flex:2;height:52px;font-size:15px;font-weight:800">Скопировать</button></div>';
+    var ta = $('#ttText'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise(function (ok, fail) {
+      var ta = $('#ttText') || document.createElement('textarea');
+      ta.value = text; ta.select(); ta.setSelectionRange(0, text.length);
+      try { document.execCommand('copy') ? ok() : fail(); } catch (e) { fail(e); }
+    });
+  }
+  $('#ttModal').addEventListener('click', function (e) {
+    if (e.target === $('#ttModal') || e.target.closest('[data-tt-close]')) { closeModal(); return; }
+    var m = e.target.closest('[data-tt-min]'), r = e.target.closest('[data-tt-reason]');
+    if (m || r) {
+      var note = $('#ttNote') ? $('#ttNote').value : '';
+      if (m) tt.minutes = +m.dataset.ttMin; else tt.reason = r.dataset.ttReason;
+      renderTechTime(); $('#ttNote').value = note; return;
+    }
+    if (e.target.closest('#ttGo')) {
+      var b = $('#ttGo'), reason = ttReasonText();
+      b.disabled = true; b.textContent = 'Начисляю…';
+      api('POST', '/api/hosts/' + tt.host.id + '/techtime', { minutes: tt.minutes, reason: reason }).then(function (d) {
+        showTechTimeResult(d, reason);
+      }, function (err) { toast(err.message); b.disabled = false; b.textContent = 'Начислить ' + tt.minutes + ' мин'; });
+      return;
+    }
+    if (e.target.closest('#ttCopy')) {
+      copyText($('#ttText').value).then(function () { toast('Скопировано'); closeModal(); },
+        function () { toast('Выделите текст и скопируйте вручную'); });
+    }
+  });
 
   /* ---------- склад (только сверка, в Gizmo ничего не пишем) ---------- */
   function loadStock() {

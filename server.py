@@ -68,6 +68,10 @@ LISTEN_PORT = int(cfg("LISTEN_PORT", "8787"))
 WOL_BROADCAST = cfg("WOL_BROADCAST", "255.255.255.255")
 SESSION_HOURS = float(cfg("SESSION_HOURS", "12"))
 CLUB_NAME = cfg("CLUB_NAME", "Зал 1")
+# Как показывать сообщение на ПК: toast — тихая плашка сверху; box — окно с кнопкой ОК; msg — msg.exe
+MESSAGE_MODE = cfg("MESSAGE_MODE", "toast").lower()
+# В чём Gizmo считает «amount» при начислении времени: minutes или seconds (проверить на стенде)
+TECH_TIME_UNIT = cfg("TECH_TIME_UNIT", "minutes").lower()
 
 
 # ───────────────────────── Gizmo API ─────────────────────────
@@ -228,7 +232,7 @@ def user_name(gz, uid):
 
 
 def list_hosts(gz):
-    hosts = [h for h in (gz.get("/api/hostcomputers") or []) if not h.get("isDeleted")]
+    hosts = [h for h in all_hosts(gz, 0) if not h.get("isDeleted")]
     try:
         sessions = gz.get("/api/usersessions/active") or []
     except GizmoError:
@@ -262,11 +266,32 @@ def list_hosts(gz):
     return out
 
 
+HOSTS_CACHE = [0.0, []]   # [time, hostcomputers] — чтобы действия не ждали лишний запрос
+
+
+def all_hosts(gz, max_age=60):
+    if time.time() - HOSTS_CACHE[0] > max_age or not HOSTS_CACHE[1]:
+        HOSTS_CACHE[1] = gz.get("/api/hostcomputers") or []
+        HOSTS_CACHE[0] = time.time()
+    return HOSTS_CACHE[1]
+
+
 def host_by_id(gz, host_id):
-    for h in gz.get("/api/hostcomputers") or []:
-        if h.get("id") == host_id and not h.get("isDeleted"):
-            return h
+    for attempt in (60, 0):  # сначала из кэша, если ПК там нет — свежий список
+        for h in all_hosts(gz, attempt):
+            if h.get("id") == host_id and not h.get("isDeleted"):
+                return h
     raise GizmoError("ПК не найден", 404)
+
+
+def in_background(op, action, hname, fn):
+    """Отправить команду и сразу ответить телефону; ошибку — в журнал."""
+    def run():
+        try:
+            fn()
+        except Exception as e:
+            audit(op, action + "_failed", hname, str(e)[:200])
+    POOL.submit(run)
 
 
 # ───────────────────────── процессы ─────────────────────────
@@ -352,29 +377,30 @@ def user_processes(procs):
 GROUP_CACHE = {}       # hostId -> (time, {key: group}) — для мгновенного «Завершить»
 
 
-def process_groups(gz, host_id, sample=0.7):
-    """sample=None — один снимок (быстро, без ЦП%); иначе два снимка с паузой для ЦП%."""
-    t1 = time.time()
-    first = gz.get(f"/api/hostcomputers/{host_id}/process", timeout=20) or []
-    if sample is None:
-        second = first
-        elapsed = 1.0
-    else:
-        time.sleep(sample)
-        t2 = time.time()
-        second = gz.get(f"/api/hostcomputers/{host_id}/process", timeout=20) or []
-        # между снимками прошло примерно (начало второго запроса − начало первого)
-        elapsed = max(0.2, t2 - t1)
-    cpu0 = {p.get("id"): parse_span(p.get("totalProcessorTime")) for p in first}
-    ncpu = max([p.get("processorCount") or 1 for p in second] + [1])
+PROC_SNAP = {}         # hostId -> (time, {pid: cpuSeconds}) — предыдущий снимок для ЦП%
+
+
+def process_groups(gz, host_id):
+    """ОДИН запрос к ПК. ЦП% считаем по разнице с предыдущим снимком этого же ПК
+    (первый показ — без ЦП, следующий через пару секунд — уже с ЦП)."""
+    now = time.time()
+    procs = gz.get(f"/api/hostcomputers/{host_id}/process", timeout=20) or []
+    prev = PROC_SNAP.get(host_id)
+    cur = {p.get("id"): parse_span(p.get("totalProcessorTime")) for p in procs}
+    PROC_SNAP[host_id] = (now, cur)
+    has_cpu = bool(prev and 0.5 < now - prev[0] < 60)
+    elapsed = (now - prev[0]) if has_cpu else 1.0
+    cpu0 = prev[1] if has_cpu else {}
+    ncpu = max([p.get("processorCount") or 1 for p in procs] + [1])
 
     groups = {}
-    for p, exe, path in user_processes(second):
+    for p, exe, path in user_processes(procs):
         key = app_key(path, exe)
         g = groups.setdefault(key, {"key": key, "procs": [], "cpu": 0.0, "icon": None,
                                     "name": None, "start": None, "exes": set()})
-        delta = parse_span(p.get("totalProcessorTime")) - cpu0.get(p.get("id"), parse_span(p.get("totalProcessorTime")))
-        g["cpu"] += max(0.0, delta) / elapsed / ncpu * 100
+        pid = p.get("id")
+        if has_cpu and pid in cpu0:
+            g["cpu"] += max(0.0, cur.get(pid, 0.0) - cpu0[pid]) / elapsed / ncpu * 100
         g["procs"].append(p)
         g["exes"].add(exe)
         mm = p.get("mainModule") or {}
@@ -393,12 +419,12 @@ def process_groups(gz, host_id, sample=0.7):
         name = mm.get("description") or os.path.splitext(main.get("processExeName") or "")[0] or g["key"]
         result.append({
             "key": g["key"], "name": name, "count": len(g["procs"]),
-            "cpu": round(min(100.0, g["cpu"]), 1),
+            "cpu": round(min(100.0, g["cpu"]), 1) if has_cpu else None,
             "started": g["start"].isoformat(timespec="seconds") if g["start"] else None,
             "icon": g["icon"], "exes": sorted(g["exes"]),
             "rootPids": [p.get("id") for p in roots],
         })
-    result.sort(key=lambda x: -x["cpu"])
+    result.sort(key=lambda x: (-(x["cpu"] or 0), x["name"].lower()))
     GROUP_CACHE[host_id] = (time.time(), {g["key"]: g for g in result})
     return result
 
@@ -408,7 +434,7 @@ def find_group(gz, host_id, key):
     c = GROUP_CACHE.get(host_id)
     if c and time.time() - c[0] < 180 and key in c[1]:
         return c[1][key]
-    return {g["key"]: g for g in process_groups(gz, host_id, sample=None)}.get(key)
+    return {g["key"]: g for g in process_groups(gz, host_id)}.get(key)
 
 
 # ───────────────────────── действия ─────────────────────────
@@ -430,9 +456,11 @@ def wake_on_lan(mac):
 
 
 # Тихое уведомление: плашка сверху по центру, НЕ забирает фокус (игру не свернёт),
-# клики проходят сквозь неё, без кнопок, исчезает сама.
-QUIET_TOAST_PS = r'''
-$ErrorActionPreference = 'Stop'
+# клики проходят сквозь неё, без кнопок, исчезает сама. Ошибки пишет в %TEMP%\club-toast.log на ПК.
+QUIET_TOAST_PS = r"""
+$log = Join-Path $env:TEMP 'club-toast.log'
+try {
+"$(Get-Date -Format s) старт" | Out-File -Append -Encoding utf8 $log
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -ReferencedAssemblies System.Windows.Forms, System.Drawing -TypeDefinition @"
@@ -441,23 +469,17 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 public class QuietToast : Form {
-    [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int a, int b, int c, int d, int e, int f);
-    [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-    public QuietToast() {
-        FormBorderStyle = FormBorderStyle.None;
-        ShowInTaskbar = false;
-        StartPosition = FormStartPosition.Manual;
-    }
-    protected override bool ShowWithoutActivation { get { return true; } }
-    protected override CreateParams CreateParams {
-        get {
-            CreateParams cp = base.CreateParams;
-            // NOACTIVATE | TOOLWINDOW | TOPMOST | TRANSPARENT (клики насквозь) | LAYERED
-            cp.ExStyle |= 0x08000000 | 0x00000080 | 0x00000008 | 0x00000020 | 0x00080000;
-            return cp;
-        }
-    }
-    public void Round(int r) { Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, Width + 1, Height + 1, r, r)); }
+[DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int a, int b, int c, int d, int e, int f);
+[DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+public QuietToast() { FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual; }
+protected override bool ShowWithoutActivation { get { return true; } }
+protected override CreateParams CreateParams { get {
+CreateParams cp = base.CreateParams;
+cp.ExStyle |= 0x08000000 | 0x00000080 | 0x00000008 | 0x00000020 | 0x00080000;
+return cp; } }
+public void Round(int r) { Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, Width + 1, Height + 1, r, r)); }
+public void KeepOnTop() { SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040); }
 }
 "@
 [QuietToast]::SetProcessDPIAware() | Out-Null
@@ -465,11 +487,9 @@ $g = [System.Drawing.Graphics]::FromHwnd([IntPtr]::Zero); $k = $g.DpiX / 96.0; $
 $scr = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 $w = [int][Math]::Min(560 * $k, $scr.Width - 40 * $k)
 $pad = [int](18 * $k)
-
 $f = New-Object QuietToast
 $f.BackColor = [System.Drawing.Color]::FromArgb(23, 28, 34)
 $f.Opacity = 0.0
-
 $title = New-Object System.Windows.Forms.Label
 $title.Text = 'Администратор'
 $title.ForeColor = [System.Drawing.Color]::FromArgb(95, 211, 182)
@@ -477,7 +497,6 @@ $title.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 9)
 $title.AutoSize = $true
 $title.Location = New-Object System.Drawing.Point(($pad + [int](12 * $k)), $pad)
 $f.Controls.Add($title)
-
 $msg = New-Object System.Windows.Forms.Label
 $msg.ForeColor = [System.Drawing.Color]::FromArgb(238, 241, 244)
 $msg.Font = New-Object System.Drawing.Font('Segoe UI', 13)
@@ -486,63 +505,77 @@ $msg.AutoSize = $true
 $msg.Text = '__TEXT__'
 $msg.Location = New-Object System.Drawing.Point(($pad + [int](12 * $k)), ($title.Bottom + [int](2 * $k)))
 $f.Controls.Add($msg)
-
 $h = $msg.Bottom + $pad
 $bar = New-Object System.Windows.Forms.Panel
 $bar.BackColor = [System.Drawing.Color]::FromArgb(95, 211, 182)
 $bar.Location = New-Object System.Drawing.Point($pad, $pad)
 $bar.Size = New-Object System.Drawing.Size([int](4 * $k), ($h - 2 * $pad))
 $f.Controls.Add($bar)
-
 $f.Size = New-Object System.Drawing.Size($w, $h)
 $f.Location = New-Object System.Drawing.Point(($scr.X + [int](($scr.Width - $w) / 2)), ($scr.Y + [int](24 * $k)))
 $f.Round([int](16 * $k))
-
-$script:t = 0
-$hold = __SECONDS__ * 1000
+$global:tt = 0
+$global:hold = __SECONDS__ * 1000
+$global:tf = $f
 $tm = New-Object System.Windows.Forms.Timer
 $tm.Interval = 30
+$global:tmr = $tm
 $tm.Add_Tick({
-    $script:t += 30
-    if ($script:t -le 240) { $f.Opacity = [Math]::Min(0.95, $script:t / 240 * 0.95) }
-    elseif ($script:t -ge ($hold + 240)) {
-        $f.Opacity = [Math]::Max(0, $f.Opacity - 0.08)
-        if ($f.Opacity -le 0.02) { $tm.Stop(); $f.Close() }
-    }
+$global:tt += 30
+$global:tf.KeepOnTop()
+if ($global:tt -le 240) { $global:tf.Opacity = [Math]::Min(0.95, $global:tt / 240 * 0.95) }
+elseif ($global:tt -ge ($global:hold + 240)) {
+$global:tf.Opacity = [Math]::Max(0, $global:tf.Opacity - 0.08)
+if ($global:tf.Opacity -le 0.02) { $global:tmr.Stop(); $global:tf.Close() }
+}
 })
 $tm.Start()
+"$(Get-Date -Format s) показ" | Out-File -Append -Encoding utf8 $log
 [System.Windows.Forms.Application]::Run($f)
-'''
+} catch {
+"$(Get-Date -Format s) ОШИБКА: $($_.Exception.Message)" | Out-File -Append -Encoding utf8 $log
+}
+"""
+
+# Окно с кнопкой ОК (поверх всего) — у вас уже работало; режим MESSAGE_MODE=box
+BOX_PS = r"""
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.MessageBox]::Show('__TEXT__', 'Сообщение от администратора', 'OK', 'Information', 'Button1', 'ServiceNotification') | Out-Null
+"""
 
 
-def quiet_toast_args(text, seconds=7):
-    script = (QUIET_TOAST_PS.replace("__TEXT__", text.replace("'", "''"))
+def ps_args(template, text, seconds=7):
+    script = (template.replace("__TEXT__", text.replace("'", "''"))
               .replace("__SECONDS__", str(int(seconds))))
-    # убираем отступы и пустые строки (C#-блок внутри @"…"@ это не ломает)
     script = "\n".join(line.strip() for line in script.splitlines() if line.strip())
-    # Скрипт сжимаем (deflate) и передаём в base64: адрес запроса к Gizmo остаётся коротким,
-    # а кавычки и кириллица в тексте ничего не ломают.
+    # Сжимаем (deflate) и передаём в base64: запрос к Gizmo короткий, кавычки и кириллица не ломаются.
     import zlib
     raw = zlib.compress(script.encode("utf-8"), 9)[2:-4]          # «голый» deflate для DeflateStream
     b64 = base64.b64encode(raw).decode("ascii")
-    boot = ("$d=New-Object IO.Compression.DeflateStream([IO.MemoryStream][Convert]::FromBase64String('" + b64 +
-            "'),[IO.Compression.CompressionMode]::Decompress);"
+    boot = ("$d=New-Object IO.Compression.DeflateStream((New-Object IO.MemoryStream(,[Convert]::FromBase64String('" + b64 +
+            "'))),([IO.Compression.CompressionMode]::Decompress));"
             "iex ((New-Object IO.StreamReader($d,[Text.Encoding]::UTF8)).ReadToEnd())")
     return f'-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "{boot}"'
 
 
+def quiet_toast_args(text, seconds=7):
+    return ps_args(QUIET_TOAST_PS, text, seconds)
+
+
+PS64 = r"C:\Windows\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+
+
 def send_message(gz, host_id, text, seconds=7):
-    """Сообщение на экран ПК.
-    1) тихая плашка сверху через PowerShell (не мешает игре, исчезает сама);
-    2) запасной вариант — msg.exe (окно с кнопкой ОК), если PowerShell недоступен."""
-    attempts = [
-        ("toast", r"C:\Windows\Sysnative\WindowsPowerShell\v1.0\powershell.exe", quiet_toast_args(text, seconds)),
-        ("toast", "powershell.exe", quiet_toast_args(text, seconds)),
-        ("msg", r"C:\Windows\Sysnative\msg.exe", f"* /TIME:120 {text}"),
-        ("msg", r"C:\Windows\System32\msg.exe", f"* /TIME:120 {text}"),
-    ]
+    """Сообщение на экран ПК — способ задаёт MESSAGE_MODE в .env:
+    toast (по умолчанию) — тихая плашка сверху; box — окно с ОК; msg — msg.exe.
+    Если нужный файл на ПК не найден — пробуем следующий способ."""
+    toast = [("toast", PS64, quiet_toast_args(text, seconds)), ("toast", "powershell.exe", quiet_toast_args(text, seconds))]
+    box = [("box", PS64, ps_args(BOX_PS, text)), ("box", "powershell.exe", ps_args(BOX_PS, text))]
+    msg = [("msg", r"C:\Windows\Sysnative\msg.exe", f"* /TIME:120 {text}"),
+           ("msg", r"C:\Windows\System32\msg.exe", f"* /TIME:120 {text}")]
+    order = {"box": box + msg, "msg": msg + box}.get(MESSAGE_MODE, toast + box + msg)
     last = None
-    for name, exe, args in attempts:
+    for name, exe, args in order:
         try:
             start_on_host(gz, host_id, exe, args)
             return name
@@ -723,7 +756,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/stock" and method == "GET":
             return self.send_json(200, {"products": stock_list(gz)})
 
-        m = re.fullmatch(r"/api/hosts/(\d+)/(processes|kill|reboot|shutdown|wake|message)", path)
+        m = re.fullmatch(r"/api/hosts/(\d+)/(processes|kill|reboot|shutdown|wake|message|techtime)", path)
         if not m:
             return self.send_json(404, {"error": "Нет такого метода"})
         host_id, action = int(m.group(1)), m.group(2)
@@ -760,18 +793,14 @@ class Handler(BaseHTTPRequestHandler):
             audit(op, "kill", hname, g["name"])
             return self.send_json(200, {"ok": True, "name": g["name"]})
 
-        if action == "reboot":
-            # /t 0 — сразу, без окна-предупреждения и обратного отсчёта; /f — не ждать, пока закроются программы
-            start_on_host(gz, host_id, "shutdown.exe", "/r /f /t 0")
+        if action in ("reboot", "shutdown"):
+            # /t 0 — сразу, без окна-предупреждения; /f — не ждать, пока закроются программы.
+            # Команду отправляем в фоне: телефон получает ответ мгновенно.
+            args = "/r /f /t 0" if action == "reboot" else "/s /f /t 0"
+            in_background(op, action, hname, lambda: start_on_host(gz, host_id, "shutdown.exe", args))
             STATUS_CACHE.pop(host_id, None)
-            audit(op, "reboot", hname)
-            return self.send_json(200, {"ok": True, "inSeconds": 0})
-
-        if action == "shutdown":
-            start_on_host(gz, host_id, "shutdown.exe", "/s /f /t 0")
-            STATUS_CACHE.pop(host_id, None)
-            audit(op, "shutdown", hname)
-            return self.send_json(200, {"ok": True, "inSeconds": 0})
+            audit(op, action, hname)
+            return self.send_json(200, {"ok": True})
 
         if action == "wake":
             wake_on_lan(host.get("macAddress"))
@@ -788,9 +817,31 @@ class Handler(BaseHTTPRequestHandler):
                 seconds = min(30, max(3, int(b.get("seconds") or 7)))
             except (TypeError, ValueError):
                 seconds = 7
-            method_used = send_message(gz, host_id, text, seconds)
-            audit(op, "message", hname, f"{text} [{method_used}]")
-            return self.send_json(200, {"ok": True, "method": method_used})
+
+            def deliver():
+                used = send_message(gz, host_id, text, seconds)
+                audit(op, "message", hname, f"{text} [{used}]")
+            in_background(op, "message", hname, deliver)
+            return self.send_json(200, {"ok": True})
+
+        if action == "techtime":
+            try:
+                minutes = int(b.get("minutes") or 0)
+            except (TypeError, ValueError):
+                minutes = 0
+            if not 1 <= minutes <= 240:
+                raise GizmoError("Укажите от 1 до 240 минут", 400)
+            reason = clean_text(b.get("reason"), 120) or "без причины"
+            sess = [s_ for s_ in (gz.get("/api/usersessions/active") or []) if s_.get("hostId") == host_id]
+            if not sess:
+                raise GizmoError("На этом ПК сейчас никто не сидит", 409)
+            uid = sess[0].get("userId")
+            amount = minutes * 60 if TECH_TIME_UNIT.startswith("sec") else minutes
+            # цена 0 — бесплатное (техническое) время; в Gizmo остаётся счёт на 0 ₽ для отчётов
+            gz.call("POST", f"/api/users/{uid}/order/time/{amount}/price/0/invoice")
+            name = user_name(gz, uid)
+            audit(op, "techtime", hname, f"{name}: {minutes} мин ({reason})")
+            return self.send_json(200, {"ok": True, "user": name, "minutes": minutes, "reason": reason, "host": hname})
 
         return self.send_json(404, {"error": "Нет такого метода"})
 
