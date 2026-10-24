@@ -1,0 +1,124 @@
+name: Сборка приложений (Android APK + iOS IPA)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/build-apps.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Подготовка проекта
+        run: bash mobile/scripts/prepare.sh android 2>&1 | tee android.log
+      - name: Сборка APK
+        run: |
+          cd mobile/android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee -a ../../android.log
+          cp app/build/outputs/apk/debug/app-debug.apk ../../Admin.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: Admin.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: log-android
+          path: android.log
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Подготовка проекта
+        run: bash mobile/scripts/prepare.sh ios 2>&1 | tee ios.log
+      - name: Сборка IPA (без подписи — подпишет AltStore/Sideloadly)
+        run: |
+          cd mobile/ios/App
+          if [ -d App.xcworkspace ]; then TARGET="-workspace App.xcworkspace"; else TARGET="-project App.xcodeproj"; fi
+          xcodebuild $TARGET -scheme App -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > ../../../ios-xcodebuild.log 2>&1 || { tail -120 ../../../ios-xcodebuild.log | tee -a ../../../ios.log; exit 1; }
+          tail -20 ../../../ios-xcodebuild.log | tee -a ../../../ios.log
+          APP=$(find build/Build/Products -name "App.app" -type d | head -1)
+          echo "APP=$APP" | tee -a ../../../ios.log
+          mkdir -p Payload && cp -R "$APP" Payload/
+          zip -qry ../../../Admin.ipa Payload
+          ls -la ../../../Admin.ipa | tee -a ../../../ios.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: Admin.ipa
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: log-ios
+          path: |
+            ios.log
+            ios-xcodebuild.log
+
+  release:
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-*"
+          merge-multiple: true
+      - name: Релиз с файлами
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="apps-${{ github.run_number }}"
+          cat > notes.md <<'EOF'
+          **Admin.apk** — андроид: скачать на телефон и установить (разрешить установку из этого источника).
+
+          **Admin.ipa** — айфон: установить через Sideloadly или AltStore со своим Apple ID (бесплатно; переподписывается раз в 7 дней).
+
+          При первом запуске введите адрес сервера клуба, например `100.x.x.x:8787`.
+          EOF
+          gh release create "$TAG" Admin.apk Admin.ipa --title "Приложения ${TAG#apps-}" --notes-file notes.md --latest
+
+  # журнал сборки — в ветку ci-logs (чтобы его можно было прочитать без доступа к Actions)
+  logs:
+    needs: [android, ios]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: log-*
+          path: logs
+      - name: Сохранить журнал в ветку ci-logs
+        run: |
+          cd logs
+          git init -q -b ci-logs
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          echo "run ${{ github.run_number }} · ${{ github.sha }} · android=${{ needs.android.result }} ios=${{ needs.ios.result }}" > STATUS.txt
+          git add -A && git commit -qm "logs run ${{ github.run_number }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs

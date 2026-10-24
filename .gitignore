@@ -3,3 +3,7 @@
 actions.log
 __pycache__/
 *.pyc
+# нативные проекты генерируются при сборке в GitHub Actions
+mobile/node_modules/
+mobile/android/
+mobile/ios/

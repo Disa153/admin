@@ -67,6 +67,7 @@ LISTEN_HOST = cfg("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(cfg("LISTEN_PORT", "8787"))
 WOL_BROADCAST = cfg("WOL_BROADCAST", "255.255.255.255")
 SESSION_HOURS = float(cfg("SESSION_HOURS", "12"))
+VERSION = "0.3"
 CLUB_NAME = cfg("CLUB_NAME", "Зал 1")
 # Как показывать сообщение на ПК: toast — тихая плашка сверху; box — окно с кнопкой ОК; msg — msg.exe
 MESSAGE_MODE = cfg("MESSAGE_MODE", "toast").lower()
@@ -644,9 +645,11 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     # --- ответы ---
-    def send_json(self, code, obj):
+    def send_json(self, code, obj, cors=False):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
+        if cors:  # только /api/ping: стартовый экран нативного приложения проверяет, что сервер на связи
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
@@ -715,7 +718,8 @@ class Handler(BaseHTTPRequestHandler):
             ip = self.headers["X-Forwarded-For"].split(",")[0].strip()
 
         if path == "/api/ping" and method == "GET":
-            return self.send_json(200, {"ok": True, "club": CLUB_NAME, "time": datetime.now().isoformat(timespec="seconds")})
+            return self.send_json(200, {"ok": True, "club": CLUB_NAME, "version": VERSION,
+                                        "time": datetime.now().isoformat(timespec="seconds")}, cors=True)
 
         if path == "/api/login" and method == "POST":
             if login_blocked(ip):

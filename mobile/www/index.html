@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Админка</title>
+<style>
+  :root { --bg:#0E1116; --surface:#171C22; --line:#2A323B; --text:#EEF1F4; --muted:#A3AEBA; --accent:#5FD3B6; --on-accent:#07251E; --danger:#FF9A90; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif; }
+  main { min-height: 100%; display: flex; flex-direction: column; padding: calc(56px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom)); max-width: 440px; margin: 0 auto; }
+  .logo { width: 72px; height: 72px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--accent); margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 800; margin: 20px 0 0; text-align: center; letter-spacing: -.01em; }
+  p { color: var(--muted); font-size: 14px; line-height: 1.45; text-align: center; margin: 8px 0 0; }
+  label { display: block; font-size: 13px; font-weight: 700; color: var(--muted); margin: 28px 0 6px; }
+  input { width: 100%; height: 52px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--text); padding: 0 14px; font-size: 16px; font-family: inherit; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .hint code { color: var(--text); }
+  .err { color: var(--danger); font-size: 13px; font-weight: 600; min-height: 20px; margin-top: 10px; }
+  .spacer { flex: 1; min-height: 24px; }
+  button { width: 100%; height: 56px; border: 0; border-radius: 14px; font-size: 16px; font-weight: 800; font-family: inherit; cursor: pointer; }
+  .primary { background: var(--accent); color: var(--on-accent); }
+  .ghost { background: transparent; color: var(--text); border: 1px solid var(--line); margin-top: 8px; height: 48px; font-size: 14px; font-weight: 700; }
+  button[disabled] { opacity: .5; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo" aria-hidden="true">
+    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4M6.5 10h3l1-2.5 2 5 1-2.5h4"/></svg>
+  </div>
+  <h1>Админка клуба</h1>
+  <p>Укажите адрес сервера клуба — того ПК, где запущен <b>start.bat</b></p>
+
+  <form id="f" novalidate autocomplete="off">
+    <label for="addr">Адрес сервера</label>
+    <input id="addr" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="100.101.102.103:8787">
+    <div class="hint">Адрес Tailscale (<code>100.x.x.x:8787</code> или <code>https://…ts.net</code>) — работает откуда угодно при включённом Tailscale. Адрес в Wi-Fi клуба (<code>192.168.x.x:8787</code>) — только внутри клуба.</div>
+    <div class="err" id="err" role="alert"></div>
+    <div class="spacer"></div>
+  </form>
+  <div class="spacer"></div>
+  <button class="primary" id="go" form="f" type="submit">Подключиться</button>
+  <button class="ghost" id="force" hidden>Открыть всё равно</button>
+</main>
+<script>
+(function () {
+  var KEY = 'club-admin-server';
+  var $ = function (id) { return document.getElementById(id); };
+  function get() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
+  function put(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
+
+  function normalize(v) {
+    v = (v || '').trim().replace(/\s+/g, '');
+    if (!v) return '';
+    if (!/^https?:\/\//i.test(v)) v = 'http://' + v;
+    try {
+      var u = new URL(v);
+      if (u.protocol === 'http:' && !u.port) u.port = '8787';
+      return u.origin;
+    } catch (e) { return ''; }
+  }
+
+  function ping(base) {
+    // no-cors: ответ не читаем, нам важно лишь, что сервер достижим
+    var ctl = window.AbortController ? new AbortController() : null;
+    var t = setTimeout(function () { if (ctl) ctl.abort(); }, 5000);
+    return fetch(base + '/api/ping', { mode: 'no-cors', cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then(function () { clearTimeout(t); }, function (e) { clearTimeout(t); throw e; });
+  }
+
+  function open(base) { location.replace(base + '/'); }
+
+  function connect(base, auto) {
+    $('err').textContent = ''; $('force').hidden = true;
+    $('go').disabled = true; $('go').textContent = 'Подключаюсь…';
+    ping(base).then(function () { put(base); open(base); }, function () {
+      $('go').disabled = false; $('go').textContent = 'Подключиться';
+      $('err').textContent = auto
+        ? 'Сервер ' + base.replace(/^https?:\/\//, '') + ' не отвечает. Включён ли Tailscale и запущен ли start.bat?'
+        : 'Не удалось подключиться. Проверьте адрес, Tailscale и что сервер запущен.';
+      $('force').hidden = false;
+      $('force').onclick = function () { put(base); open(base); };
+    });
+  }
+
+  $('f').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var base = normalize($('addr').value);
+    if (!base) { $('err').textContent = 'Введите адрес, например 100.101.102.103:8787'; return; }
+    $('addr').value = base.replace(/^http:\/\//, '');
+    connect(base, false);
+  });
+
+  var saved = get();
+  var change = /[?&]change=1/.test(location.search);
+  if (saved) $('addr').value = saved.replace(/^http:\/\//, '');
+  if (saved && !change) connect(saved, true);
+})();
+</script>
+</body>
+</html>

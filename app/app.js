@@ -96,6 +96,7 @@
   function pingServer() {
     return api('GET', '/api/ping').then(function (d) {
       state.club = d.club || 'Клуб';
+      if (d.version) $('#appVer').textContent = 'версия ' + d.version;
       $('#clubName').textContent = state.club;
       $('#clubAddr').textContent = 'Сервер на связи · ' + location.host;
       $('#srvAddr').textContent = location.host;
@@ -219,7 +220,8 @@
         '<button class="action" data-act="tasks">' + svg('i-list', 20) + 'Диспетчер задач</button>' +
         '<button class="action" data-act="msg">' + svg('i-chat', 20) + 'Сообщение</button>' +
         '<button class="action danger" data-act="shutdown">' + svg('i-power', 20) + 'Выключить</button>' +
-        (h.status === 'busy' ? '<button class="action tt-btn" data-act="techtime">' + svg('i-plus', 20) + 'Тех. время</button>' : '') + '</div>' +
+        '<button class="action tt-btn" data-act="techtime"' + (h.status === 'busy' ? '' : ' disabled') + '>' + svg('i-plus', 20) + 'Тех. время</button>' +
+        (h.status === 'busy' ? '' : '<div class="small" style="grid-column:1/-1;text-align:center">Тех. время — когда на ПК вошёл игрок</div>') + '</div>' +
         '<form class="msg-row" id="msgForm" hidden><label for="msgInput" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Текст сообщения</label>' +
         '<input class="input" id="msgInput" maxlength="200" placeholder="Текст для экрана ПК" style="height:48px"><button class="btn btn-primary" type="submit" style="height:48px">Отправить</button></form>';
     }
@@ -535,6 +537,16 @@
   $$('.switch-row').forEach(function (b) {
     b.addEventListener('click', function () { b.setAttribute('aria-checked', b.getAttribute('aria-checked') === 'true' ? 'false' : 'true'); });
   });
+
+  /* ---------- внутри нативного приложения (айфон/андроид) ---------- */
+  var nativeShell = navigator.userAgent.indexOf('ClubAdminApp') >= 0;
+  if (nativeShell) {
+    $('#changeServerRow').hidden = false;
+    $('#changeServer').addEventListener('click', function () {
+      var ios = /iphone|ipad|ipod|macintosh/i.test(navigator.userAgent);
+      location.href = (ios ? 'capacitor://localhost/' : 'https://localhost/') + '?change=1';
+    });
+  }
 
   /* ---------- автообновление ---------- */
   setInterval(function () {

@@ -1,5 +1,5 @@
 // Кэш только для оболочки приложения. Данные (/api/…) всегда идут на сервер.
-const CACHE = 'club-admin-v2';
+const CACHE = 'club-admin-v3';
 const SHELL = ['/', '/app.js', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

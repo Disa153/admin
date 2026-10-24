@@ -1,0 +1,18 @@
+{
+  "appId": "ru.clubadmin.app",
+  "appName": "Админка",
+  "webDir": "www",
+  "appendUserAgent": "ClubAdminApp",
+  "backgroundColor": "#0E1116",
+  "server": {
+    "cleartext": true,
+    "allowNavigation": ["*", "*.*", "*.*.*", "*.*.*.*", "*.*.*.*.*", "*.*.*.*.*.*"]
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "ios": {
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}

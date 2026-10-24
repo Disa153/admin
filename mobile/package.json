@@ -1,0 +1,16 @@
+{
+  "name": "club-admin-mobile",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Нативная оболочка «Админки клуба» для айфона и андроида (Capacitor)",
+  "scripts": {
+    "prepare:android": "bash scripts/prepare.sh android",
+    "prepare:ios": "bash scripts/prepare.sh ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
+  }
+}
